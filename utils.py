@@ -51,3 +51,26 @@ DISTRICT_COORDINATES = {
     6.0: {'lat': 38.8815, 'lon': -76.9955, 'name': 'Capitol Hill/Navy Yard'},
     7.0: {'lat': 38.8675, 'lon': -76.9655, 'name': 'Anacostia/Southeast'}
 }
+
+def analyze_stop_reasons(df):
+    """Analyse les raisons des arrêts"""
+    # Combiner les raisons de différents types d'arrêts
+    reasons = pd.concat([
+        df['STOP_REASON_TICKET'].dropna(),
+        df['STOP_REASON_NONTICKET'].dropna(),
+        df['STOP_REASON_HARBOR'].dropna()
+    ])
+    return reasons.value_counts().head(10)
+
+def get_hourly_stats(df):
+    """Obtient des statistiques détaillées par heure"""
+    hourly_stats = df.groupby('hour').agg({
+        'STOP_DURATION_MINS': 'mean',
+        'intervention_score': 'mean',
+        'ARREST_CHARGES': lambda x: x.notna().mean() * 100,
+        'TICKETS_ISSUED': lambda x: x.notna().mean() * 100
+    }).round(2)
+    
+    hourly_stats.columns = ['Durée moyenne (min)', 'Score intervention', 
+                           'Taux arrestation (%)', 'Taux verbalisation (%)']
+    return hourly_stats

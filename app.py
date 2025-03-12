@@ -1,11 +1,11 @@
 # app.py
 import dash
 from dash import dcc, html
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from utils import load_and_preprocess_data, DISTRICT_COORDINATES
+from utils import load_and_preprocess_data, DISTRICT_COORDINATES, analyze_stop_reasons, get_hourly_stats
 import pandas as pd
 
 # Chargement des données
@@ -18,7 +18,7 @@ app = dash.Dash(__name__, external_stylesheets=[
 
 # Layout principal
 app.layout = html.Div([
-    # Navbar
+    # Navbar avec titre
     html.Nav(className="navbar navbar-dark bg-dark", children=[
         html.Span("Analyse des interventions policières à Washington DC", 
                  className="navbar-brand mb-0 h1")
@@ -49,8 +49,9 @@ app.layout = html.Div([
                                 dcc.Dropdown(
                                     id='district-filter',
                                     options=[
-                                        {'label': f'District {int(d)} - {DISTRICT_COORDINATES[d]["name"]}', 'value': d}
-                                        for d in sorted(df['STOP_DISTRICT'].unique()) if not pd.isna(d)  # Ajout de la vérification pour NaN
+                                        {'label': f'District {int(d)} - {DISTRICT_COORDINATES[d]["name"]}', 
+                                         'value': d}
+                                        for d in sorted(df['STOP_DISTRICT'].unique()) if not pd.isna(d)
                                     ],
                                     multi=True,
                                     placeholder="Tous les districts"
@@ -74,16 +75,15 @@ app.layout = html.Div([
                 ])
             ])
         ]),
-        
-        # Première rangée de visualisations
+
+        # Première rangée - Carte et Stats
         html.Div(className="row mt-3", children=[
-            # Carte principale
+            # Carte des districts
             html.Div(className="col-md-8", children=[
                 html.Div(className="card", children=[
                     html.Div(className="card-body", children=[
-                        html.H5("Distribution géographique des interventions", 
-                               className="card-title"),
-                        dcc.Graph(id='main-map')
+                        html.H5("Distribution géographique", className="card-title"),
+                        dcc.Graph(id='district-map')
                     ])
                 ])
             ]),
@@ -97,44 +97,31 @@ app.layout = html.Div([
                 ])
             ])
         ]),
-        
-        # Deuxième rangée
+
+        # Deuxième rangée - Analyse temporelle
         html.Div(className="row mt-3", children=[
-            # Distribution temporelle
-            html.Div(className="col-md-6", children=[
-                html.Div(className="card", children=[
-                    html.Div(className="card-body", children=[
-                        html.H5("Distribution temporelle", className="card-title"),
-                        dcc.Graph(id='temporal-distribution')
-                    ])
-                ])
-            ]),
-            # Distribution ethnique
-            html.Div(className="col-md-6", children=[
-                html.Div(className="card", children=[
-                    html.Div(className="card-body", children=[
-                        html.H5("Distribution ethnique", className="card-title"),
-                        dcc.Graph(id='ethnicity-distribution')
-                    ])
-                ])
-            ])
-        ]),
-        
-        # Troisième rangée
-        html.Div(className="row mt-3", children=[
-            # Heatmap temporelle
+            # Distribution horaire
             html.Div(className="col-md-12", children=[
                 html.Div(className="card", children=[
                     html.Div(className="card-body", children=[
-                        html.H5("Patterns temporels", className="card-title"),
-                        dcc.Graph(id='temporal-heatmap')
+                        html.H5("Analyse horaire détaillée", className="card-title"),
+                        dcc.Graph(id='hourly-analysis')
                     ])
                 ])
             ])
         ]),
-        
-        # Quatrième rangée
+
+        # Troisième rangée - Raisons et Types
         html.Div(className="row mt-3", children=[
+            # Raisons des arrêts
+            html.Div(className="col-md-6", children=[
+                html.Div(className="card", children=[
+                    html.Div(className="card-body", children=[
+                        html.H5("Top 10 des raisons d'intervention", className="card-title"),
+                        dcc.Graph(id='stop-reasons')
+                    ])
+                ])
+            ]),
             # Types d'interventions
             html.Div(className="col-md-6", children=[
                 html.Div(className="card", children=[
@@ -143,26 +130,26 @@ app.layout = html.Div([
                         dcc.Graph(id='intervention-types')
                     ])
                 ])
-            ]),
-            # Durée des interventions
+            ])
+        ]),
+
+        # Quatrième rangée - Heatmap et Patterns
+        html.Div(className="row mt-3", children=[
+            # Heatmap temporelle
             html.Div(className="col-md-6", children=[
                 html.Div(className="card", children=[
                     html.Div(className="card-body", children=[
-                        html.H5("Durée des interventions", className="card-title"),
-                        dcc.Graph(id='duration-analysis')
+                        html.H5("Distribution temporelle", className="card-title"),
+                        dcc.Graph(id='temporal-heatmap')
                     ])
                 ])
-            ])
-        ]),
-        
-        # Cinquième rangée
-        html.Div(className="row mt-3 mb-3", children=[
-            # Analyse des tendances
-            html.Div(className="col-md-12", children=[
+            ]),
+            # Patterns hebdomadaires
+            html.Div(className="col-md-6", children=[
                 html.Div(className="card", children=[
                     html.Div(className="card-body", children=[
-                        html.H5("Analyse des tendances", className="card-title"),
-                        dcc.Graph(id='trends-analysis')
+                        html.H5("Patterns hebdomadaires", className="card-title"),
+                        dcc.Graph(id='weekly-patterns')
                     ])
                 ])
             ])
@@ -172,14 +159,13 @@ app.layout = html.Div([
 
 # Callbacks
 @app.callback(
-    [Output('main-map', 'figure'),
+    [Output('district-map', 'figure'),
      Output('global-stats', 'children'),
-     Output('temporal-distribution', 'figure'),
-     Output('ethnicity-distribution', 'figure'),
-     Output('temporal-heatmap', 'figure'),
+     Output('hourly-analysis', 'figure'),
+     Output('stop-reasons', 'figure'),
      Output('intervention-types', 'figure'),
-     Output('duration-analysis', 'figure'),
-     Output('trends-analysis', 'figure')],
+     Output('temporal-heatmap', 'figure'),
+     Output('weekly-patterns', 'figure')],
     [Input('date-range', 'start_date'),
      Input('date-range', 'end_date'),
      Input('district-filter', 'value'),
@@ -197,36 +183,19 @@ def update_all_graphs(start_date, end_date, selected_districts, selected_types):
         filtered_df = filtered_df[filtered_df['STOP_DISTRICT'].isin(selected_districts)]
     if selected_types:
         filtered_df = filtered_df[filtered_df['intervention_type'].isin(selected_types)]
-    
-    # 1. Carte principale
-    map_fig = create_map_visualization(filtered_df)
-    
-    # 2. Statistiques globales
-    stats_component = create_stats_component(filtered_df)
-    
-    # 3. Distribution temporelle
-    temporal_fig = create_temporal_distribution(filtered_df)
-    
-    # 4. Distribution ethnique
-    ethnicity_fig = create_ethnicity_distribution(filtered_df)
-    
-    # 5. Heatmap temporelle
-    heatmap_fig = create_temporal_heatmap(filtered_df)
-    
-    # 6. Types d'interventions
-    intervention_fig = create_intervention_types(filtered_df)
-    
-    # 7. Analyse des durées
-    duration_fig = create_duration_analysis(filtered_df)
-    
-    # 8. Analyse des tendances
-    trends_fig = create_trends_analysis(filtered_df)
-    
-    return (map_fig, stats_component, temporal_fig, ethnicity_fig,
-            heatmap_fig, intervention_fig, duration_fig, trends_fig)
 
-# Fonctions de création des visualisations
-def create_map_visualization(df):
+    return (
+        create_map(filtered_df),
+        create_stats_component(filtered_df),
+        create_hourly_analysis(filtered_df),
+        create_stop_reasons_chart(filtered_df),
+        create_intervention_types(filtered_df),
+        create_temporal_heatmap(filtered_df),
+        create_weekly_patterns(filtered_df)
+    )
+
+def create_map(df):
+    """Création de la carte des districts"""
     district_counts = df['STOP_DISTRICT'].value_counts()
     
     lats, lons, sizes, texts = [], [], [], []
@@ -250,11 +219,11 @@ def create_map_visualization(df):
         hover_name=texts,
         mapbox_style="carto-positron",
         center={"lat": 38.9072, "lon": -77.0369},
-        zoom=11,
-        title="Distribution des arrêts par district"
+        zoom=11
     )
 
 def create_stats_component(df):
+    """Création des statistiques globales"""
     total_stops = len(df)
     avg_duration = df['STOP_DURATION_MINS'].mean()
     arrest_rate = (df['ARREST_CHARGES'].notna().sum() / total_stops * 100)
@@ -267,74 +236,91 @@ def create_stats_component(df):
         html.H6(f"Taux de verbalisation: {ticket_rate:.1f}%")
     ])
 
-def create_temporal_distribution(df):
-    hourly_counts = df['hour'].value_counts().sort_index()
+def create_hourly_analysis(df):
+    """Création de l'analyse horaire"""
+    hourly_stats = get_hourly_stats(df)
     
-    return px.line(
-        x=hourly_counts.index,
-        y=hourly_counts.values,
-        title="Distribution horaire des arrêts",
-        labels={'x': 'Heure', 'y': 'Nombre d\'arrêts'}
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    hourly_counts = df['hour'].value_counts().sort_index()
+    fig.add_trace(
+        go.Bar(x=hourly_counts.index, y=hourly_counts.values, 
+               name="Nombre d'interventions", opacity=0.7),
+        secondary_y=False
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=hourly_stats.index, y=hourly_stats['Taux arrestation (%)'],
+                  name="Taux d'arrestation", line=dict(color='red')),
+        secondary_y=True
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=hourly_stats.index, y=hourly_stats['Taux verbalisation (%)'],
+                  name="Taux de verbalisation", line=dict(color='orange')),
+        secondary_y=True
+    )
+    
+    fig.update_layout(
+        title="Analyse horaire des interventions",
+        xaxis_title="Heure",
+        yaxis_title="Nombre d'interventions",
+        yaxis2_title="Taux (%)"
+    )
+    
+    return fig
+
+def create_stop_reasons_chart(df):
+    """Création du graphique des raisons d'arrêt"""
+    reasons = analyze_stop_reasons(df)
+    
+    return px.bar(
+        x=reasons.values,
+        y=reasons.index,
+        orientation='h',
+        title="Top 10 des raisons d'intervention",
+        labels={'x': "Nombre d'interventions", 'y': "Raison"}
     )
 
-def create_ethnicity_distribution(df):
-    ethnicity_counts = df['ETHNICITY'].value_counts()
+def create_intervention_types(df):
+    """Création du graphique des types d'intervention"""
+    type_counts = df['intervention_type'].value_counts()
     
     return px.pie(
-        values=ethnicity_counts.values,
-        names=ethnicity_counts.index,
-        title="Distribution par ethnicité",
+        values=type_counts.values,
+        names=type_counts.index,
+        title="Distribution des types d'intervention",
         hole=0.4
     )
 
 def create_temporal_heatmap(df):
-    heatmap_data = pd.crosstab(df['hour'], df['day_of_week'])
+    """Création de la heatmap temporelle"""
+    heatmap_data = pd.crosstab(
+        df['hour'],
+        df['day_of_week']
+    )
+    
     days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     heatmap_data = heatmap_data[days_order]
     
     return px.imshow(
         heatmap_data,
         title="Distribution des arrêts par heure et jour",
-        labels=dict(x="Jour", y="Heure", color="Nombre d'arrêts"),
-        aspect="auto"
+        labels=dict(x="Jour", y="Heure", color="Nombre d'arrêts")
     )
 
-def create_intervention_types(df):
-    intervention_counts = df['intervention_type'].value_counts()
+def create_weekly_patterns(df):
+    """Création des patterns hebdomadaires"""
+    weekly = pd.crosstab(df['day_of_week'], df['intervention_type'])
+    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    weekly = weekly.reindex(days_order)
     
     return px.bar(
-        x=intervention_counts.index,
-        y=intervention_counts.values,
-        title="Types d'interventions",
-        labels={'x': 'Type', 'y': 'Nombre'}
+        weekly,
+        barmode='stack',
+        title="Distribution des interventions par jour",
+        labels={'day_of_week': 'Jour', 'value': "Nombre d'interventions"}
     )
-
-def create_duration_analysis(df):
-    return px.box(
-        df,
-        x='intervention_type',
-        y='STOP_DURATION_MINS',
-        title="Distribution des durées par type d'intervention"
-    )
-
-def create_trends_analysis(df):
-    daily_counts = df.groupby(df['DATETIME'].dt.date).size()
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=daily_counts.index,
-        y=daily_counts.values,
-        mode='lines',
-        name='Nombre d\'arrêts'
-    ))
-    
-    fig.update_layout(
-        title="Évolution du nombre d'arrêts dans le temps",
-        xaxis_title="Date",
-        yaxis_title="Nombre d'arrêts"
-    )
-    
-    return fig
 
 if __name__ == '__main__':
     app.run_server(debug=True)
