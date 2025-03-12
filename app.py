@@ -153,6 +153,42 @@ app.layout = html.Div([
                     ])
                 ])
             ])
+        ]),
+
+        # Cinquième rangée - Analyse ethnique
+        html.Div(className="row mt-3", children=[
+            html.Div(className="col-md-12", children=[
+                html.Div(className="card", children=[
+                    html.Div(className="card-body", children=[
+                        html.H5("Analyse par ethnicité", className="card-title"),
+                        dcc.Graph(id='ethnicity-analysis')
+                    ])
+                ])
+            ])
+        ]),
+
+        # Sixième rangée - Analyse par âge
+        html.Div(className="row mt-3", children=[
+            html.Div(className="col-md-12", children=[
+                html.Div(className="card", children=[
+                    html.Div(className="card-body", children=[
+                        html.H5("Analyse par âge", className="card-title"),
+                        dcc.Graph(id='age-analysis')
+                    ])
+                ])
+            ])
+        ]),
+
+        # Septième rangée - Tendances mensuelles
+        html.Div(className="row mt-3 mb-3", children=[
+            html.Div(className="col-md-12", children=[
+                html.Div(className="card", children=[
+                    html.Div(className="card-body", children=[
+                        html.H5("Tendances mensuelles", className="card-title"),
+                        dcc.Graph(id='monthly-trends')
+                    ])
+                ])
+            ])
         ])
     ])
 ])
@@ -165,7 +201,10 @@ app.layout = html.Div([
      Output('stop-reasons', 'figure'),
      Output('intervention-types', 'figure'),
      Output('temporal-heatmap', 'figure'),
-     Output('weekly-patterns', 'figure')],
+     Output('weekly-patterns', 'figure'),
+     Output('ethnicity-analysis', 'figure'),
+     Output('age-analysis', 'figure'),
+     Output('monthly-trends', 'figure')],
     [Input('date-range', 'start_date'),
      Input('date-range', 'end_date'),
      Input('district-filter', 'value'),
@@ -191,7 +230,10 @@ def update_all_graphs(start_date, end_date, selected_districts, selected_types):
         create_stop_reasons_chart(filtered_df),
         create_intervention_types(filtered_df),
         create_temporal_heatmap(filtered_df),
-        create_weekly_patterns(filtered_df)
+        create_weekly_patterns(filtered_df),
+        create_ethnicity_analysis(filtered_df),
+        create_age_analysis(filtered_df),
+        create_monthly_trends(filtered_df)
     )
 
 def create_map(df):
@@ -321,6 +363,164 @@ def create_weekly_patterns(df):
         title="Distribution des interventions par jour",
         labels={'day_of_week': 'Jour', 'value': "Nombre d'interventions"}
     )
+
+def create_ethnicity_analysis(df):
+    """Analyse détaillée par ethnicité"""
+    # Création de plusieurs sous-graphiques
+    fig = make_subplots(rows=2, cols=2,
+                       subplot_titles=("Distribution par ethnicité",
+                                    "Durée moyenne par ethnicité",
+                                    "Taux d'arrestation par ethnicité",
+                                    "Types d'intervention par ethnicité"))
+    
+    # Distribution par ethnicité
+    ethnicity_counts = df['ETHNICITY'].value_counts()
+    fig.add_trace(
+        go.Bar(x=ethnicity_counts.index, y=ethnicity_counts.values,
+               name="Nombre d'arrêts"),
+        row=1, col=1
+    )
+    
+    # Durée moyenne par ethnicité
+    duration_by_ethnicity = df.groupby('ETHNICITY')['STOP_DURATION_MINS'].mean()
+    fig.add_trace(
+        go.Bar(x=duration_by_ethnicity.index, y=duration_by_ethnicity.values,
+               name="Durée moyenne"),
+        row=1, col=2
+    )
+    
+    # Taux d'arrestation par ethnicité
+    arrest_by_ethnicity = df.groupby('ETHNICITY').apply(
+        lambda x: (x['ARREST_CHARGES'].notna().sum() / len(x)) * 100
+    )
+    fig.add_trace(
+        go.Bar(x=arrest_by_ethnicity.index, y=arrest_by_ethnicity.values,
+               name="Taux d'arrestation"),
+        row=2, col=1
+    )
+    
+    # Types d'intervention par ethnicité
+    intervention_by_ethnicity = pd.crosstab(df['ETHNICITY'], df['intervention_type'], normalize='index') * 100
+    for intervention_type in df['intervention_type'].unique():
+        fig.add_trace(
+            go.Bar(x=intervention_by_ethnicity.index, 
+                  y=intervention_by_ethnicity[intervention_type],
+                  name=intervention_type),
+            row=2, col=2
+        )
+    
+    fig.update_layout(height=800, showlegend=True,
+                     title_text="Analyse détaillée par ethnicité")
+    return fig
+
+def create_age_analysis(df):
+    """Analyse détaillée par âge"""
+    # Assurons-nous que AGE est numérique
+    df_clean = df.copy()
+    df_clean['AGE'] = pd.to_numeric(df_clean['AGE'], errors='coerce')
+    
+    fig = make_subplots(rows=2, cols=2,
+                       subplot_titles=("Distribution des âges",
+                                    "Âge moyen par type d'intervention",
+                                    "Âge moyen par district",
+                                    "Relation âge/durée d'intervention"))
+    
+    # Distribution des âges
+    fig.add_trace(
+        go.Histogram(x=df_clean['AGE'].dropna(), nbinsx=30, name="Distribution des âges"),
+        row=1, col=1
+    )
+    
+    # Âge moyen par type d'intervention
+    age_by_type = df_clean.groupby('intervention_type')['AGE'].agg(lambda x: x.mean()).sort_values()
+    fig.add_trace(
+        go.Bar(x=age_by_type.index, y=age_by_type.values,
+               name="Âge moyen"),
+        row=1, col=2
+    )
+    
+    # Âge moyen par district
+    age_by_district = df_clean.groupby('STOP_DISTRICT')['AGE'].agg(lambda x: x.mean()).sort_values()
+    fig.add_trace(
+        go.Bar(x=age_by_district.index.astype(str), y=age_by_district.values,
+               name="Âge moyen"),
+        row=2, col=1
+    )
+    
+    # Relation âge/durée
+    fig.add_trace(
+        go.Scatter(x=df_clean['AGE'].dropna(), 
+                  y=df_clean['STOP_DURATION_MINS'].dropna(), 
+                  mode='markers',
+                  opacity=0.5, 
+                  name="Âge vs Durée"),
+        row=2, col=2
+    )
+    
+    # Mise à jour de la mise en page
+    fig.update_layout(
+        height=800, 
+        showlegend=True,
+        title_text="Analyse détaillée par âge"
+    )
+    
+    # Mise à jour des axes
+    fig.update_xaxes(title_text="Âge", row=1, col=1)
+    fig.update_xaxes(title_text="Type d'intervention", row=1, col=2)
+    fig.update_xaxes(title_text="District", row=2, col=1)
+    fig.update_xaxes(title_text="Âge", row=2, col=2)
+    
+    fig.update_yaxes(title_text="Nombre d'interventions", row=1, col=1)
+    fig.update_yaxes(title_text="Âge moyen", row=1, col=2)
+    fig.update_yaxes(title_text="Âge moyen", row=2, col=1)
+    fig.update_yaxes(title_text="Durée (minutes)", row=2, col=2)
+    
+    return fig
+
+def create_monthly_trends(df):
+    """Analyse des tendances mensuelles"""
+    df['month_year'] = df['DATETIME'].dt.to_period('M')
+    monthly_data = df.groupby('month_year').agg({
+        'STOP_DISTRICT': 'count',
+        'ARREST_CHARGES': lambda x: x.notna().mean() * 100,
+        'STOP_DURATION_MINS': 'mean',
+        'intervention_score': 'mean'
+    }).reset_index()
+    monthly_data['month_year'] = monthly_data['month_year'].astype(str)
+    
+    fig = make_subplots(rows=2, cols=1,
+                       subplot_titles=("Évolution mensuelle du nombre d'interventions",
+                                    "Évolution des indicateurs mensuels"))
+    
+    # Nombre d'interventions
+    fig.add_trace(
+        go.Scatter(x=monthly_data['month_year'], 
+                  y=monthly_data['STOP_DISTRICT'],
+                  mode='lines+markers',
+                  name="Nombre d'interventions"),
+        row=1, col=1
+    )
+    
+    # Indicateurs mensuels
+    fig.add_trace(
+        go.Scatter(x=monthly_data['month_year'],
+                  y=monthly_data['ARREST_CHARGES'],
+                  mode='lines+markers',
+                  name="Taux d'arrestation (%)"),
+        row=2, col=1
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=monthly_data['month_year'],
+                  y=monthly_data['intervention_score'],
+                  mode='lines+markers',
+                  name="Score d'intervention"),
+        row=2, col=1
+    )
+    
+    fig.update_layout(height=800, showlegend=True,
+                     title_text="Tendances mensuelles")
+    return fig
 
 if __name__ == '__main__':
     app.run_server(debug=True)
