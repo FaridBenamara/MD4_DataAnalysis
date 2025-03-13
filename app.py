@@ -267,6 +267,7 @@ def create_map(df):
 def create_stats_component(df):
     """Création des statistiques globales"""
     total_stops = len(df)
+    # Ne plus diviser par 60 car c'est déjà en minutes
     avg_duration = df['STOP_DURATION_MINS'].mean()
     arrest_rate = (df['ARREST_CHARGES'].notna().sum() / total_stops * 100)
     ticket_rate = (df['TICKETS_ISSUED'].notna().sum() / total_stops * 100)

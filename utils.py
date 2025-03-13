@@ -2,6 +2,10 @@
 import pandas as pd
 import numpy as np
 
+def convert_duration_to_minutes(seconds):
+    """Convertit les durées de secondes en minutes"""
+    return seconds / 60
+
 def load_and_preprocess_data():
     """Charge et prétraite les données pour le dashboard"""
     # Charger les données avec low_memory=False pour éviter l'avertissement
@@ -9,6 +13,15 @@ def load_and_preprocess_data():
     
     # Conversion des dates
     df['DATETIME'] = pd.to_datetime(df['DATETIME'])
+    
+    # Nettoyage des durées d'intervention
+    df['STOP_DURATION_MINS'] = pd.to_numeric(df['STOP_DURATION_MINS'], errors='coerce')
+    
+    # Supprimer les valeurs aberrantes de durée
+    median_duration = df['STOP_DURATION_MINS'].median()
+    df['STOP_DURATION_MINS'] = df['STOP_DURATION_MINS'].apply(
+        lambda x: median_duration if pd.isna(x) or x < 0 or x > 1440 else x  # 1440 = 24 heures en minutes
+    )
     
     # Nettoyage de la colonne STOP_DISTRICT
     df['STOP_DISTRICT'] = pd.to_numeric(df['STOP_DISTRICT'], errors='coerce')
