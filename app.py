@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from utils import load_and_preprocess_data, DISTRICT_COORDINATES, analyze_stop_reasons, get_hourly_stats
 import pandas as pd
+from ml_optimizer import PoliceResourceOptimizer, create_deployment_visualization
+from datetime import datetime
 
 # Chargement des données
 df = load_and_preprocess_data()
@@ -189,7 +191,20 @@ app.layout = html.Div([
                     ])
                 ])
             ])
-        ])
+        ]),
+
+        # Section ML - Plan de Déploiement
+        html.Div([
+            html.H2("Plan de Déploiement Optimal", className="section-title"),
+            html.Div([
+                html.Div([
+                    dcc.Graph(id='deployment-analytics')
+                ], className="col-12"),
+                html.Div([
+                    dcc.Graph(id='deployment-map')
+                ], className="col-12")
+            ], className="row")
+        ], className="section"),
     ])
 ])
 
@@ -204,7 +219,9 @@ app.layout = html.Div([
      Output('weekly-patterns', 'figure'),
      Output('ethnicity-analysis', 'figure'),
      Output('age-analysis', 'figure'),
-     Output('monthly-trends', 'figure')],
+     Output('monthly-trends', 'figure'),
+     Output('deployment-analytics', 'figure'),
+     Output('deployment-map', 'figure')],
     [Input('date-range', 'start_date'),
      Input('date-range', 'end_date'),
      Input('district-filter', 'value'),
@@ -223,6 +240,9 @@ def update_all_graphs(start_date, end_date, selected_districts, selected_types):
     if selected_types:
         filtered_df = filtered_df[filtered_df['intervention_type'].isin(selected_types)]
 
+    # Obtenir les figures du plan de déploiement
+    deployment_analytics, deployment_map = create_deployment_plan(filtered_df)
+
     return (
         create_map(filtered_df),
         create_stats_component(filtered_df),
@@ -233,7 +253,9 @@ def update_all_graphs(start_date, end_date, selected_districts, selected_types):
         create_weekly_patterns(filtered_df),
         create_ethnicity_analysis(filtered_df),
         create_age_analysis(filtered_df),
-        create_monthly_trends(filtered_df)
+        create_monthly_trends(filtered_df),
+        deployment_analytics,
+        deployment_map
     )
 
 def create_map(df):
@@ -522,6 +544,30 @@ def create_monthly_trends(df):
     fig.update_layout(height=800, showlegend=True,
                      title_text="Tendances mensuelles")
     return fig
+
+def create_deployment_plan(df):
+    """Création du plan de déploiement"""
+    # Obtenir les recommandations de déploiement
+    optimizer = PoliceResourceOptimizer()
+    resources_needed = optimizer.predict_resource_needs(df)
+    
+    # Calculer le pourcentage d'officiers par district
+    total_officers = 4000
+    district_percentages = (resources_needed / total_officers * 100).round(1)
+    
+    # Créer les visualisations avec les informations de pourcentage
+    figures = create_deployment_visualization(resources_needed, DISTRICT_COORDINATES)
+    
+    # Ajouter une annotation pour le total
+    figures['analytics'].add_annotation(
+        text=f"Total des officiers disponibles: {total_officers}",
+        xref="paper", yref="paper",
+        x=0.5, y=1.05,
+        showarrow=False,
+        font=dict(size=14)
+    )
+    
+    return figures['analytics'], figures['map']
 
 if __name__ == '__main__':
     app.run_server(debug=True)
