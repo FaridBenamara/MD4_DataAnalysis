@@ -172,3 +172,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+/.idea
+Stop_Data_2019_to_2022.csv
